@@ -3,5 +3,7 @@
 /Routes
 /node_modules
 /.env
+/_hibernate.txt
+/_shutdown.txt
 
 

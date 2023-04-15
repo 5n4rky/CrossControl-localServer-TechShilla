@@ -1,6 +1,14 @@
 const loginForm = document.getElementById('login-form')
+const registerBtn = document.getElementById('Register')
+const mainServerUrl = "http://192.168.189.137:3000"
+const mainServerUrlRegiser = "http://192.168.189.137:3001/register"
 
-const mainServerUrl = "http://192.168.76.137:3000"
+
+registerBtn.addEventListener('click',()=>
+{
+    window.location = mainServerUrlRegiser
+})
+
 loginForm.addEventListener('submit', async (event) => {
 
 
@@ -146,7 +154,7 @@ loginForm.addEventListener('submit', async (event) => {
         }
     }
     catch (err) {
-        console.log(err)
+        console.log('error while logging in ' , err)
     }
 
 

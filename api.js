@@ -6,14 +6,26 @@ const dotenv = require('dotenv')
 const jwt = require('jsonwebtoken')
 const path = require('path')
 const { userInfo } = require('os')
+const cors = require('cors')
+
 
 dotenv.config()
 const app = express()
+
+
 const exec = util.promisify(require('child_process').exec); // promisifying the child process returned by exec
+
 
 app.use(express.static(path.join(__dirname, 'views')))
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
+// app.use(cors())
+// app.use((req, res, next) => {
+//  // res.header('Access-Control-Allow-Origin','*')
+//     res.header('Access-Control-Allow-Methods', 'GET, PUT, POST, DELETE, OPTIONS');
+//     res.header('Access-Control-Allow-Headers', 'Content-Type, auth-token,RequestMode');
+//     next();
+//   });
 const dir = path.join(__dirname, '/views')
 
 
@@ -27,6 +39,7 @@ const getForwordingURL = async () => {
         const url = tunnels.tunnels[0].public_url
       
         return url
+        
 
 
     }
@@ -62,7 +75,7 @@ const preprocessTaskList = async (tasks) => {
 
 let allowRemoteControl = true;
 
-let mainServerUrl = "http://192.168.76.137:3000"
+let mainServerUrl = "http://192.168.189.137:3000"
 let forwardingURL;
 
 
@@ -72,9 +85,14 @@ let forwardingURL;
 
 
 const commandLine = async (command) => {
-
+   try{
     const { stdout, error } = await exec(command)
     return { stdout, error }
+   }
+   catch(err)
+   {
+    console.log(err)
+   }
 
 
 }
@@ -83,7 +101,7 @@ const commandLine = async (command) => {
 
 const authorizeInternalRequest = async (req, res, next) => {
 
-
+  try{
      const authHeader = req.headers['auth-token'] // Bearer token
      
     
@@ -91,10 +109,14 @@ const authorizeInternalRequest = async (req, res, next) => {
     if(token == null)return res.sendStatus(401)
 
     jwt.verify(token,process.env.SECRET_KEY , (err , user)=>
-    {
+    { if(err)console.log(err)
         if(err) return res.sendStatus(403)
         next()
     })
+}catch(err)
+{
+    console.log('error in authorizing internal request', authorizeIncomingRequest)
+}
 
 
 
@@ -104,10 +126,12 @@ const authorizeInternalRequest = async (req, res, next) => {
 
 // authorize middle ware
 const authorizeIncomingRequest = async (req, res, next) => {
+  
+   try{
     if (!allowRemoteControl) {
-        return res.send({ 'err': 'device status offline' })
+        return res.send({ status :'failed','error': 'denied' })
     }
-
+    const authHeader = req.headers['auth-token']
     const token = authHeader
     if(token == null)return res.sendStatus(401)
 
@@ -116,6 +140,12 @@ const authorizeIncomingRequest = async (req, res, next) => {
         if(err) return res.sendStatus(403)
         next()
     })
+}
+catch(err)
+{
+    console.log('error in authorizing internal request' ,err)
+}
+    //next()
 
     
 
@@ -130,19 +160,11 @@ const authorizeIncomingRequest = async (req, res, next) => {
     app.get('/login', (req, res) => {
         res.sendFile(dir + '/login.html')
     })
-    app.get('/batteryInfo',authorizeIncomingRequest,async(req,res)=>
-    {
-        const reqBatteryPercentage = await commandLine('wmic path Win32_Battery Get EstimatedChargeRemaining')
-        const batteryPercentage = reqBatteryPercentage.split('\n')[1]
-        const reqBatteryStatus = await commandLine('wmic path Win32_Battery Get BatteryStatus')
-        const batteryStatus = reqBatteryStatus.split('/n')[1]>=2 ? 2 : 1;
-
-      
-       res.send({'batteryPercentage':batteryPercentage , 'batteryStatus' : batteryStatus })
-    })
+    
 
     app.post('/userInfo', async (req, res) => {
-        console.log(req.body)
+        try{
+        
         if (req.body.deviceID == null) {
             const reqBatteryPercentage = await commandLine('wmic path Win32_Battery Get EstimatedChargeRemaining')
              const batteryPercentage = reqBatteryPercentage.stdout.split('\n')[1]
@@ -152,15 +174,20 @@ const authorizeIncomingRequest = async (req, res, next) => {
            
             process.env.userName = req.body.userName
             forwardingURL = await getForwordingURL() 
-            console.log(forwardingURL)
+            //console.log(forwardingURL)
             res.send({ 'forwardingURL': forwardingURL , 'batteryPercentage':batteryPercentage , 'batteryStatus' : batteryStatus })
         }
         else {
             
             process.env.deviceID = req.body.deviceID
       
-            res.send({ stats: 'ok' })
+            res.send({ status: 'ok' })
         }
+    }
+    catch(err)
+    {
+        res.send({status:'failed' , 'error' : err})
+    }
     })
 
 
@@ -170,7 +197,8 @@ const authorizeIncomingRequest = async (req, res, next) => {
     })
 
     app.post('/dashboard', authorizeInternalRequest, async (req, res) => {
-
+      
+         try{
         const stateReq = req.body.deviceState
         const jwt = req.headers['auth-token']
 
@@ -199,12 +227,15 @@ const authorizeIncomingRequest = async (req, res, next) => {
                 }
           
           
-          console.log(reqObject)
-          console.log('device id',process.env.deviceID)
+        
         
           let resMainServer = await fetch(`${mainServerUrl}/api/devices/toggleactive/${process.env.deviceID}`, reqObject)
           resMainServer = res.json()
-          
+            }
+            catch(err)
+            {
+                res.send({'status' : 'faild', 'error' : err})
+            }
          
 
 
@@ -231,51 +262,109 @@ const authorizeIncomingRequest = async (req, res, next) => {
 
 //main server routes
 {
-    app.get('/api/shutdown', authorizeIncomingRequest, async (req, res) => {
+    app.get('/api/batteryinfo',authorizeIncomingRequest,async(req,res)=>
+    {
+        try{
+        const reqBatteryPercentage = await commandLine('wmic path Win32_Battery Get EstimatedChargeRemaining')
+        const batteryPercentage = reqBatteryPercentage.stdout.split('\n')[1]
+        
+        const reqBatteryStatus = await commandLine('wmic path Win32_Battery Get BatteryStatus')
+       
+        const batteryStatus = reqBatteryStatus.stdout[18];
+    
 
-
-        const jwt = req.headers.authorization
-        const deleteReqObj = {
-            method: 'DELTE',
-            headers: {
-                authorization: jwt
-            },
-            body: {
-                userName: JSON.stringify(userName)
-            }
+      
+          res.send({'battery':batteryPercentage , 'charging' : batteryStatus ,status :'ok'})
         }
-        await fetch(`${mainServerUrl}/api/devices/delete/${deviceID}`, deleteReqObj)
+       catch(err)
+       { console.log(err)
+          res.send({'status' : 'failed' , 'error' : err})
+       }
+    })
+    app.get('/api/shutdown', authorizeIncomingRequest, async (req, res) => {
+  
+    try{
+        const jwt = req.headers['auth-token']
+        const data = {
+            'userName' : process.env.userName
+         }
+        
+          let reqObject = {
+                    method: 'DELETE',
+                    headers: {
+                        'content-type': 'application/json',
+                        'auth-token' : jwt
+        
+                    },
+                    body: JSON.stringify(data)
+        
+        
+        
+                }
+       let resMainServer= await fetch(`${mainServerUrl}/api/devices/delete/${process.env.deviceID}`, reqObject)
+       resMainServer = await resMainServer.json()
+       
         res.send({ status: 'ok' })
-        const { stdout, error } = commandLine('_shutdown.txt') // here i dont need to or may be i can wait for complete process to finish i.e i close txt file
+        const { stdout, error } = commandLine('shutdown /s /t 0') // here i dont need to or may be i can wait for complete process to finish i.e i close txt file
+            }
+            catch(err)
+            {
+                res.send({status:'failed',error:err})
+            }
 
     })
 
     app.get('/api/hibernate', authorizeIncomingRequest, async (req, res) => {
         // send hibernation success remark
-        res.send({ staus: 'ok' })
-        const { stdout, error } = await commandLine('_hibernate.txt')
+        try{
+
+        const jwt = req.headers['auth-token']
+        const data = {
+            'userName' : process.env.userName
+         }
+        
+          let reqObject = {
+                    method: 'PATCH',
+                    headers: {
+                        'content-type': 'application/json',
+                        'auth-token' : jwt
+        
+                    },
+                    body: JSON.stringify(data)
+        
+        
+        
+                }
+          
+          
+        
+        
+          let resMainServer = await fetch(`${mainServerUrl}/api/devices/toggleactive/${process.env.deviceID}`, reqObject)
+          resMainServer = await resMainServer.json()
+        res.send({ status: 'ok' })
+        const { stdout, error } = await commandLine('shutdown /h')
         // when device is online send this back to the server informing about being online
-        const jwt = req.headers.authorization
-        const patchReqObj = {
-            method: 'PATCH',
-            headers: {
-                authorization: jwt
-            },
-            body: {
-                userName: JSON.stringify(userName)
+      
+          
+         resMainServer = await fetch(`${mainServerUrl}/api/devices/toggleactive/${process.env.deviceID}`, reqObject)
             }
-        }
-        const toggleActivityRequest = await fetch(`${mainServerUrl}/api/devices/toggleactive/${deviceID}`, patchReqObj)
+            catch(err)
+            {
+                console.log('error route hibernate ',err)
+                res.send({'status' : 'failed' , 'error' : err})
+            }
 
 
 
     })
 
     app.get('/api/tasklist', authorizeIncomingRequest, async (req, res) => {
+      try{
+
 
         const { stdout, error } = await commandLine('tasklist');
         if (error) {
-            res.send('error is', error)
+            res.send({status:'error','error':error})
         }
         if (stdout) {
             const lines = stdout.split('\n').slice(3, -1); // Get the lines of output, excluding the headers and footers
@@ -283,24 +372,33 @@ const authorizeIncomingRequest = async (req, res, next) => {
                 const columns = line.trim().split(/\s+/); // Split each line into columns using any amount of whitespace as the delimiter
                 return { processName: columns[0], memoryUsage: columns[4] }; // Create an object with the relevant columns
             });
-
-            res.send({ 'processes': processes })
+           
+            
+            res.send({ 'processes': processes , 'status':'ok'})
 
 
 
         }
+
+    }
+    catch(err)
+    {
+       console.log('error in tasklist ', err)
+        res.send({'status' : 'failed' , 'error' : err})
+    }
 
     })
 
-    app.get('/api/taskkill/:task', authorizeIncomingRequest, async (req, res) => {
-
-        const task = req.params.task
+    app.post('/api/taskkill', authorizeIncomingRequest, async (req, res) => {
+        
+        const task = req.body['task']
         try {
-            await commandLine(`taskkill /im ${task}.exe /F`)
+            await commandLine(`taskkill /im ${task} /F`)
             res.send({ status: 'ok' })
         }
         catch (err) {
-            res.send({ status: 'failed', 'err': err })
+            console.log('taskkill error',err)
+            res.send({ status: 'failed', 'error': err })
         }
 
     })
